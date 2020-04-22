@@ -1,6 +1,11 @@
-from math import sqrt, pi, sin, cos, asin, acos
+from math import sqrt, pi, sin, cos, asin, acos, isnan
 from time import time
 from numba import njit
+import numpy as np
+from tabulate import tabulate
+from matplotlib import pyplot as plt
+from matplotlib.colors import BoundaryNorm
+from matplotlib.ticker import MaxNLocator
 
 
 # import cProfile
@@ -17,14 +22,14 @@ def main():
     mu = M * G
 
     r1 = 1 * au
-    r2 = 2 * au
+    r2 = 1.523 * au
 
     m1 = Me
-    m2 = 1 * Me
+    m2 = 0.107 * Me
 
     rorb = 100000  # 100 km initial and target orbit.
     h1 = 6700000  # radius of planet 1
-    h2 = 6700000  # radius of planet 2
+    h2 = 3400000  # radius of planet 2
 
     search_low = -max(r1, r2) * 20
     search_high = max(r1, r2) * 20
@@ -34,7 +39,7 @@ def main():
     ttcutoff = 300 * unit  # unit of unit.chooping off data points taking too long
 
     dv_unit = 1000  # unit of m/s.
-    dvcutoff = 12 * dv_unit
+    dvcutoff = 6 * dv_unit
 
     vorb1 = sqrt(G * m1 / (rorb + h1))
     vorb2 = sqrt(G * m2 / (rorb + h2))
@@ -45,6 +50,10 @@ def main():
     w1 = sqrt(mu / r1 ** 3)
     w2 = sqrt(mu / r2 ** 3)  # assuming circular orbit.
     syn_period = 2 * pi / abs(w2 - w1)  # synodic period in seconds
+
+    """note that ini_alp = 0 will result in numerical singularity"""
+    ang_res = 1 / 100
+    ini_alp = ang_res
 
     @njit(fastmath=True)
     def shooting_pblm(alpha):
@@ -112,14 +121,14 @@ def main():
 
             oneperiod = sqrt(a ** 3 / mu) * 2 * pi
 
-            """rejects long orbit"""
-            if (periods * oneperiod) > ttcutoff:
+            """rejects long orbit and rejects orbits taking multiple rev."""
+            if (periods * oneperiod) > min(ttcutoff, syn_period):
                 y += search_res
                 continue
 
             """calculates the shooting angle measured from first to second"""
 
-            sa = alpha * pi / 180 - periods * 2 * pi * sqrt(a ** 3 / mu) * w2
+            sa = alpha * pi / 180 - periods * oneperiod * w2
 
             """reduces sa to between (0,2pi)"""
 
@@ -152,16 +161,13 @@ def main():
                 y += search_res
                 continue
             else:
-                result.append([sa, dv1, dv2, periods * oneperiod])
+                result.append([sa, dv1, dv2, periods * oneperiod, phi1, phi2])
 
             y += search_res
 
         return result
 
     start_time = time()
-
-    ini_alp = 0
-    ang_res = 1 / 100
 
     @njit
     def firstelement(lists):
@@ -173,11 +179,13 @@ def main():
         alpha = ini_alp
         """if only want trajectory in the direction of r1 X r2 then (0,180)"""
         """else 360 for full coverage"""
-        while alpha <= 180:
-            if alpha % 180 == 0:
-                alpha += ang_res
+        while alpha <= (180 - ang_res):
             trajectory.extend(shooting_pblm(alpha))
             alpha += ang_res
+            """
+            if alpha % 180 == 0:
+                alpha += ang_res
+                """
         trajectory.sort(key=firstelement)
         return trajectory
 
@@ -189,8 +197,7 @@ def main():
 
     print("Calculating took {} seconds".format(round(end_time - start_time, 2)))
 
-    def draw(trajectory):
-        import numpy as np
+    def draw(traject):
 
         """calculates size of grid"""
 
@@ -205,7 +212,7 @@ def main():
             shape=(xsize, ysize), dtype=int
         )  # N used to calculate cumulative moving average
 
-        for traj in trajectory:
+        for traj in traject:
 
             sa_rad = traj[0]
             dv1 = traj[1]
@@ -227,13 +234,10 @@ def main():
             else:
                 """rolling average in the computation of dv required"""
                 Z[x, y] += (tdv - Z[x, y]) / (cman[x, y] + 1 + 1)
+                # Z[x, y] = min(Z[x, y], tdv)
 
             """increment the rolling count by 1"""
             cman[x, y] = cman[x, y] + 1
-
-        from matplotlib import pyplot as plt
-        from matplotlib.colors import BoundaryNorm
-        from matplotlib.ticker import MaxNLocator
 
         fig = plt.figure()
         """enumerate to find peak and bottom of chart"""
@@ -264,31 +268,43 @@ def main():
 
         plt.show()
 
-    save = True
-    """save the available trajectories as .txt"""
-    if save:
+    def save(traject):
         """sort trajectory according to sum dv"""
 
         def sum12(lists):
             return lists[1] + lists[2]
 
-        trajectory.sort(key=sum12)
-        from tabulate import tabulate
+        traject.sort(key=sum12)
+
+        """sanitize traj for printout"""
+        san_traj = []
+        for traj in traject:
+            sa_deg = traj[0] * 180 / pi  # rad->deg
+            tt_day = traj[3] / 86400  # s->days
+            efpa_deg = traj[4] * 180 / pi  # rad->deg
+            ifpa_deg = traj[5] * 180 / pi  # rad->deg
+
+        san_traj.append([sa_deg, traj[1], traj[2], tt_day, efpa_deg, ifpa_deg])
 
         f = open("trajs.txt", "w")
         f.write(
             tabulate(
-                trajectory,
+                san_traj,
                 tablefmt="pipe",
                 headers=[
-                    "shooting angle rad",
+                    "shooting angle deg",
                     "ejecion dv m/s",
                     "injecting dv m/s",
-                    "travel time s",
+                    "travel time days",
+                    "ejection fpa deg",
+                    "insertion fpa deg",
                 ],
             )
         )
         f.close()
+        print("File Saved.")
+
+    save(trajectory)
 
     draw(trajectory)
 
