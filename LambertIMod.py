@@ -64,17 +64,15 @@ vlo2 = m.sqrt(mu2 / (rp2 + hlo))
 ve1 = vlo1 * m.sqrt(2)  # escape velocity of planets
 ve2 = vlo2 * m.sqrt(2)
 
-# time of travel
-t = 86400 * 258  # 200 days
-
-# validates all inputs:
-assert t > 0
-assert mu > 0
-
 
 # main lamberts solver implemented using python
 # algorithm from Pykep in C++
 def lambert(r1_arr, r2_arr, mu, t):
+
+    # validates all inputs:
+    assert t > 0
+    assert mu > 0
+
     r1 = np.linalg.norm(r1_arr)
     r2 = np.linalg.norm(r2_arr)
 
@@ -297,33 +295,37 @@ def circularOrbit(r_arr, ih=np.array([0, 0, -1])):
 
 
 # solve lamberts over the entire synodic period.
+# and scan for solution.
 # r1 is fixed at [r1,0,0]
-def synodic(a1, a2, dAng=10):
-    ang = 0
-    r1_arr = np.array([a1, 0, 0])
-    while ang < 360:
-        angRad = ang * m.pi / 180
-        r2_arr = np.array([m.cos(angRad) * a2, m.sin(angRad) * a2, 0])
-        vlist = lambert(r1_arr, r2_arr, mu, t)
+def scan(a1, a2, tlow, thigh, dAng=10, dT=10*86400):
+    t = tlow
+    while t < thigh:
+        ang = 0
+        r1_arr = np.array([a1, 0, 0])
+        while ang < 360:
+            angRad = ang * m.pi / 180
+            r2_arr = np.array([m.cos(angRad) * a2, m.sin(angRad) * a2, 0])
+            vlist = lambert(r1_arr, r2_arr, mu, t)
 
-        for vel in vlist:
-            # define all relevent velocities
-            v1_arr = vel[0]
-            vr1_arr = circularOrbit(r1_arr)
-            v2_arr = vel[1]
-            vr2_arr = circularOrbit(r2_arr)
+            for vel in vlist:
+                # define all relevent velocities
+                v1_arr = vel[0]
+                vr1_arr = circularOrbit(r1_arr)
+                v2_arr = vel[1]
+                vr2_arr = circularOrbit(r2_arr)
 
-            # hyperbolic excess velocity
-            dv1_arr = np.subtract(v1_arr, vr1_arr)
-            dv2_arr = np.subtract(v2_arr, vr2_arr)
+                # hyperbolic excess velocity
+                dv1_arr = np.subtract(v1_arr, vr1_arr)
+                dv2_arr = np.subtract(v2_arr, vr2_arr)
 
-            # actual low orbit delta v:
-            dv1 = m.sqrt(np.linalg.norm(dv1_arr) ** 2 + ve1 ** 2) - vlo1
-            dv2 = m.sqrt(np.linalg.norm(dv2_arr) ** 2 + ve2 ** 2) - vlo2
+                # actual low orbit delta v:
+                dv1 = m.sqrt(np.linalg.norm(dv1_arr) ** 2 + ve1 ** 2) - vlo1
+                dv2 = m.sqrt(np.linalg.norm(dv2_arr) ** 2 + ve2 ** 2) - vlo2
 
-            print(ang, dv1, dv2)
+                print(t, ang, dv1, dv2)
 
-        ang += dAng
+            ang += dAng
+        t += dT
 
 
-synodic(1 * au, 1.7 * au)
+scan(1 * au, 1.7 * au, 100*86400, 300*86400)
