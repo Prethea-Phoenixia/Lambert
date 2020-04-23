@@ -1,5 +1,7 @@
 import numpy as np
 import math as m
+from numba import jit, njit
+
 
 # halley's method to find root of f(x) = 0
 def halley(func, ini, abs_div=1e-13):
@@ -27,17 +29,35 @@ def householder(func, ini, abs_div=1e-13):
     return x0
 
 
-# evaluate hypergeometric function to the nominally tenth place
-def hypergeometric(a, b, c, z, n=10):
-    def series(m, i):
-        ret = 1
-        for n in range(0, i):
-            ret *= m + n
-        return ret
+# slave function to hypergeometric calculation
+@njit
+def series(m, i, n):
+    ret = 1.0
+    for n in range(0, i):
+        ret *= m + n
+    return ret
 
-    hyp = 0
+
+@njit
+def factorial(n):
+    fact = 1.0
+    for i in range(1, n + 1):
+        fact *= i
+    return fact
+
+
+# evaluate hypergeometric function to the nominally tenth place
+@njit
+def hypergeometric(a, b, c, z, n=10):
+
+    hyp = 0.0
     for i in range(0, n):
-        hyp += series(a, i) * series(b, i) / (series(c, i) * m.factorial(i)) * z ** i
+        hyp += (
+            series(a, i, n)
+            * series(b, i, n)
+            / (series(c, i, n) * factorial(i))
+            * z ** i
+        )
 
     return hyp
 
@@ -297,7 +317,22 @@ def circularOrbit(r_arr, ih=np.array([0, 0, -1])):
 # solve lamberts over the entire synodic period.
 # and scan for solution.
 # r1 is fixed at [r1,0,0]
-def scan(a1, a2, tlow, thigh, dAng=10, dT=10*86400):
+# returns numpy array of departure and arrival true dV, lists of travel time and angle.
+
+
+def scan(a1, a2, tlow, thigh, dAng=2, dT=5 * 86400):
+    ysize = thigh // dT
+    xsize = 360 // dAng
+    dv_dep = np.empty(shape=(xsize, ysize), dtype=object)
+    dv_arr = np.empty(shape=(xsize, ysize), dtype=object)
+    ang_ls = []
+
+    ang = 0
+    while ang < 360:
+        ang_ls.append(ang)
+        ang += dAng
+
+    t_ls = []
     t = tlow
     while t < thigh:
         ang = 0
@@ -306,6 +341,9 @@ def scan(a1, a2, tlow, thigh, dAng=10, dT=10*86400):
             angRad = ang * m.pi / 180
             r2_arr = np.array([m.cos(angRad) * a2, m.sin(angRad) * a2, 0])
             vlist = lambert(r1_arr, r2_arr, mu, t)
+
+            dvdepls = []
+            dvarrls = []
 
             for vel in vlist:
                 # define all relevent velocities
@@ -322,10 +360,55 @@ def scan(a1, a2, tlow, thigh, dAng=10, dT=10*86400):
                 dv1 = m.sqrt(np.linalg.norm(dv1_arr) ** 2 + ve1 ** 2) - vlo1
                 dv2 = m.sqrt(np.linalg.norm(dv2_arr) ** 2 + ve2 ** 2) - vlo2
 
-                print(t, ang, dv1, dv2)
+                dvdepls.append(dv1)
+                dvarrls.append(dv2)
+
+            y = t // dT
+            x = ang // dAng
+            dv_dep[x, y] = dvdepls
+            dv_arr[x, y] = dvarrls
 
             ang += dAng
+
+        t_ls.append(t)
         t += dT
+    return dv_dep, dv_arr, t_ls, ang_ls
 
 
-scan(1 * au, 1.7 * au, 100*86400, 300*86400)
+dvDep, dvArr, tls, als = scan(1 * au, 1.7 * au, 10 * 86400, 300 * 86400)
+
+# filter array of orbits to first revolution.
+def filterfirstrev(orbits_arr):
+    x_lim, y_lim = orbits_arr.shape
+    first_pass = np.empty_like(orbits_arr)
+    for x in range(0, x_lim):
+        for y in range(0, y_lim):
+            if orbits_arr[x, y] is not None:
+                first_pass[x, y] = orbits_arr[x, y][0]
+            else:
+                first_pass[x, y] = np.nan
+
+    return first_pass
+
+
+# code to fancy-print and visualize data.
+import matplotlib.pyplot as plt
+
+deltaVcutoff = 50 * 1000  # cutoff for contour plotting
+
+fdep_arr = filterfirstrev(dvDep)
+farr_arr = filterfirstrev(dvArr)
+
+# find local minima
+fsum_arr = fdep_arr + farr_arr
+summin = np.nanmin(fsum_arr)
+minloc = np.where(fsum_arr == summin)
+
+level = np.linspace(summin, deltaVcutoff, 10)
+fig, ax = plt.subplots()
+sumcontour = ax.contour(np.swapaxes(fsum_arr, 0, 1), levels=level)
+ax.clabel(sumcontour, inline=1, inline_spacing=0.1, fontsize=8, fmt="%1.1f")
+thisx, thisy = minloc
+ax.scatter(thisx, thisy, marker="x")
+ax.annotate(str(int(summin)), minloc, c="navy")
+plt.show()
