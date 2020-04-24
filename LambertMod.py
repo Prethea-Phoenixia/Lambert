@@ -145,7 +145,7 @@ def lambert(r1_arr, r2_arr, mu, t):
         Mmax = m.floor(T / m.pi)
         T00 = m.acos(labda) + labda * m.sqrt(1 - labda_squared)
 
-        def fT(x, M=Mmax):
+        def fT(x, M):
             # calculates y
             y = m.sqrt(1 - labda_squared * (1 - x ** 2))
 
@@ -214,13 +214,13 @@ def lambert(r1_arr, r2_arr, mu, t):
 
             # wrapper for calculating derivative of T
             def dT(x):
-                t, dt, d2t, d3t = fT(x)
+                t, dt, d2t, d3t = fT(x,Mmax)
                 return dt, d2t, d3t
 
             # using halley's method to solve for root
             # then using root to find Tmin
             # dummy variables to preserve formatting.
-            Tmin, dTmin, d2Tmin, d3Tmin = fT(halley(dT, 0))
+            Tmin, dTmin, d2Tmin, d3Tmin = fT(halley(dT, 0),Mmax)
 
             if Tmin > T:
                 Mmax = Mmax - 1
@@ -242,11 +242,6 @@ def lambert(r1_arr, r2_arr, mu, t):
             t, dt, d2t, d3t = fT(x, 0)
             return t - Tstar, dt, d2t, d3t
 
-        # wrapper for f(x) = T(x)-T* using M = Mmax
-        def deltaStar(x):
-            t, dt, d2t, d3t = fT(x)
-            return t - Tstar, dt, d2t, d3t
-
         # start householder iterations from x0 and find x,y
         # for the first revolution, so presumably M = 0
         x = householder(deltaStar0, x0)
@@ -258,6 +253,11 @@ def lambert(r1_arr, r2_arr, mu, t):
         while Mmax > 0:
             # x0r and x0l from Eq.31,M = Mmax
             M = Mmax
+            # wrapper for f(x) = T(x)-T* using M = Mmax
+            def deltaStar(x):
+                t, dt, d2t, d3t = fT(x,M)
+                return t - Tstar, dt, d2t, d3t
+
             x0l = (((M * m.pi + m.pi) / (8 * T)) ** (2 / 3) - 1) / (
                 ((M * m.pi + m.pi) / (8 * T)) ** (2 / 3) + 1
             )
@@ -303,6 +303,8 @@ def lambert(r1_arr, r2_arr, mu, t):
 
 # return velocity vector of planet in a circular orbit
 # velocity vector direction is counterclockwise (ir x ih)
+# defaults onto X-Y plane
+@njit
 def circularOrbit(r_arr, ih=np.array([0, 0, -1])):
     R = np.linalg.norm(r_arr)
     # unit vector
@@ -320,16 +322,19 @@ def circularOrbit(r_arr, ih=np.array([0, 0, -1])):
 # returns numpy array of departure and arrival true dV, lists of travel time and angle.
 
 
-def scan(a1, a2, tlow, thigh, dAng=2, dT=5 * 86400):
+def scan(mu, a1, a2, tlow, thigh, dAng=1, dT=10 * 86400):
     ysize = thigh // dT
     xsize = 360 // dAng
     dv_dep = np.empty(shape=(xsize, ysize), dtype=object)
     dv_arr = np.empty(shape=(xsize, ysize), dtype=object)
     ang_ls = []
 
+    p1 = m.sqrt(a1 ** 3 / mu) * 2 * m.pi
+    p2 = m.sqrt(a2 ** 3 / mu) * 2 * m.pi
+    syn_p = p1 * p2 / abs(p1 - p2)
     ang = 0
     while ang < 360:
-        ang_ls.append(ang)
+        ang_ls.append(syn_p * ang / 360)
         ang += dAng
 
     t_ls = []
@@ -375,7 +380,7 @@ def scan(a1, a2, tlow, thigh, dAng=2, dT=5 * 86400):
     return dv_dep, dv_arr, t_ls, ang_ls
 
 
-dvDep, dvArr, tls, als = scan(1 * au, 1.7 * au, 10 * 86400, 300 * 86400)
+dvDep, dvArr, tls, als = scan(mu, 1.0 * au, 1.7 * au, 10 * 86400, 300 * 86400)
 
 # filter array of orbits to first revolution.
 def filterfirstrev(orbits_arr):
@@ -393,14 +398,17 @@ def filterfirstrev(orbits_arr):
 
 # code to fancy-print and visualize data.
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 
-deltaVcutoff = 50 * 1000  # cutoff for contour plotting
+deltaVcutoff = 50  # cutoff for contour plotting
 
 fdep_arr = filterfirstrev(dvDep)
 farr_arr = filterfirstrev(dvArr)
 
-# find local minima
+# sum up
 fsum_arr = fdep_arr + farr_arr
+# convert unit into km/s
+fsum_arr /= 1000
 summin = np.nanmin(fsum_arr)
 minloc = np.where(fsum_arr == summin)
 
@@ -410,5 +418,15 @@ sumcontour = ax.contour(np.swapaxes(fsum_arr, 0, 1), levels=level)
 ax.clabel(sumcontour, inline=1, inline_spacing=0.1, fontsize=8, fmt="%1.1f")
 thisx, thisy = minloc
 ax.scatter(thisx, thisy, marker="x")
-ax.annotate(str(int(summin)), minloc, c="navy")
+ax.annotate(str("{0:.3f}".format(summin)), minloc, c="navy")
+
+scalex = max(als) / len(als)
+scaley = max(tls) / len(tls)
+
+scaley /= 86400  # converts travel time into days
+scalex /= 86400
+ticks = ticker.FuncFormatter(lambda x, pos: "{0:.1f}".format(x * scalex))
+ax.xaxis.set_major_formatter(ticks)
+ticks = ticker.FuncFormatter(lambda y, pos: "{0:.1f}".format(y * scaley))
+ax.yaxis.set_major_formatter(ticks)
 plt.show()
