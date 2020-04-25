@@ -6,7 +6,7 @@ import time
 
 
 # householder's method
-@njit
+@njit(cache = True)
 def householder(T,labda,labda_squared, ini, abs_div=1e-10):
     x0 = ini
     f0, df, d2f, d3f = deltaStar0(T,x0,labda,labda_squared)
@@ -20,7 +20,7 @@ def householder(T,labda,labda_squared, ini, abs_div=1e-10):
 
 
 # slave function to hypergeometric calculation
-@njit
+@njit(cache = True)
 def series(m, i, n):
     ret = 1.0
     for n in range(0, i):
@@ -28,7 +28,7 @@ def series(m, i, n):
     return ret
 
 
-@njit
+@njit(cache = True)
 def factorial(n):
     fact = 1.0
     for i in range(1, n + 1):
@@ -37,7 +37,7 @@ def factorial(n):
 
 
 # evaluate hypergeometric function to the nominally tenth place
-@njit
+@njit(cache = True)
 def hypergeometric(a, b, c, z, n=10):
     hyp = 0.0
     for i in range(0, n):
@@ -74,7 +74,7 @@ ve1 = vlo1 * m.sqrt(2)  # escape velocity of planets
 ve2 = vlo2 * m.sqrt(2)
 
 # wrapper for f(x) = T(x)-T* using M = 0
-@njit
+@njit(cache = True,fastmath = True)
 def deltaStar0(T,x,labda,labda_squared):
     y = m.sqrt(1 - labda_squared * (1 - x ** 2))
 
@@ -133,7 +133,7 @@ def deltaStar0(T,x,labda,labda_squared):
 
 # main lamberts solver implemented using python
 # algorithm from Pykep in C++
-@njit
+@njit(cache = True)
 def lambert(r1_arr, r2_arr, mu, t):
 
     # validates all inputs:
@@ -226,7 +226,7 @@ def lambert(r1_arr, r2_arr, mu, t):
 # return velocity vector of planet in a circular orbit
 # velocity vector direction is counterclockwise (ir x ih)
 # defaults onto X-Y plane
-@njit
+@njit(cache = True)
 def circularOrbit(r_arr, ih=np.array([0, 0, -1])):
     R = np.linalg.norm(r_arr)
     # unit vector
@@ -243,12 +243,12 @@ def circularOrbit(r_arr, ih=np.array([0, 0, -1])):
 # r1 is fixed at [r1,0,0]
 # returns numpy array of departure and arrival true dV, lists of travel time and angle.
 
-
+@njit(cache = True)
 def scan(mu, a1, a2, tlow, thigh, dAng=1, dT=1 * 86400):
     ysize = thigh // dT
     xsize = 360 // dAng
-    dv_dep = np.empty(shape=(xsize, ysize), dtype=object)
-    dv_arr = np.empty(shape=(xsize, ysize), dtype=object)
+    dv_dep = np.empty(shape=(xsize, ysize))
+    dv_arr = np.empty(shape=(xsize, ysize))
     dv_dep[:] = np.NaN
     dv_arr[:] = np.NaN
     ang_ls = []
