@@ -4,23 +4,22 @@ from numba import jit, njit
 import time
 
 
-
 # householder's method
-@njit(cache = True)
-def householder(T,labda,labda_squared, ini, abs_div=1e-10):
+@njit(cache=True)
+def householder(T, labda, labda_squared, ini, abs_div=1e-10):
     x0 = ini
-    f0, df, d2f, d3f = deltaStar0(T,x0,labda,labda_squared)
+    f0, df, d2f, d3f = deltaStar0(T, x0, labda, labda_squared)
     while abs(f0) > abs_div:
         x1 = x0 - f0 * (df ** 2 - f0 * d2f / 2) / (
             df * (df ** 2 - f0 * d2f) + d3f * f0 ** 2 / 6
         )
         x0 = x1
-        f0, df, d2f, d3f = deltaStar0(T,x0,labda,labda_squared)
+        f0, df, d2f, d3f = deltaStar0(T, x0, labda, labda_squared)
     return x0
 
 
 # slave function to hypergeometric calculation
-@njit(cache = True)
+@njit(cache=True)
 def series(m, i, n):
     ret = 1.0
     for n in range(0, i):
@@ -28,7 +27,7 @@ def series(m, i, n):
     return ret
 
 
-@njit(cache = True)
+@njit(cache=True)
 def factorial(n):
     fact = 1.0
     for i in range(1, n + 1):
@@ -37,7 +36,7 @@ def factorial(n):
 
 
 # evaluate hypergeometric function to the nominally tenth place
-@njit(cache = True)
+@njit(cache=True)
 def hypergeometric(a, b, c, z, n=10):
     hyp = 0.0
     for i in range(0, n):
@@ -56,26 +55,9 @@ au = 1.496e11  # Astronomical unit in meters
 Mj = 1.898e27  # Julian mass in kilograms
 Me = 5.972e24  # Earth mass in kilograms
 
-Msol = 1047.35 * Mj  # one solar mass
-mu = Msol * G
-
-mu1 = 1 * Me * G  # SGP for planet 1
-mu2 = 0.107 * Me * G  # SGP for planet 2
-
-rp1 = 6400 * 1000  # mean radius of planet 1
-rp2 = 3400 * 1000  # mean radius of planet 2
-
-hlo = 0 * 1000  # height of low orbit
-
-vlo1 = m.sqrt(mu1 / (rp1 + hlo))  # low orbit velocity of planets
-vlo2 = m.sqrt(mu2 / (rp2 + hlo))
-
-ve1 = vlo1 * m.sqrt(2)  # escape velocity of planets
-ve2 = vlo2 * m.sqrt(2)
-
 # wrapper for f(x) = T(x)-T* using M = 0
-@njit(cache = True,fastmath = True)
-def deltaStar0(T,x,labda,labda_squared):
+@njit(cache=True, fastmath=True)
+def deltaStar0(T, x, labda, labda_squared):
     y = m.sqrt(1 - labda_squared * (1 - x ** 2))
 
     # use y and x to calculate auxiliary angle psi
@@ -96,11 +78,7 @@ def deltaStar0(T,x,labda,labda_squared):
         q = 4 / 3 * hypergeometric(3, 1, 2.5, s1)
         Tx = (eta ** 3 * q + 4 * labda * eta) / 2
     else:
-        Tx = (
-            1
-            / (1 - x ** 2)
-            * ((psi) / m.sqrt(abs(1 - x ** 2)) - x + labda * y)
-        )
+        Tx = 1 / (1 - x ** 2) * ((psi) / m.sqrt(abs(1 - x ** 2)) - x + labda * y)
 
     if x == 1:
         # parabola
@@ -119,21 +97,20 @@ def deltaStar0(T,x,labda,labda_squared):
         # first derivative
         dT = (3 * Tx * x - 2 + 2 * labda ** 3 * x / y) / (1 - x ** 2)
         # second derivative
-        d2T = (
-            3 * Tx + 5 * x * dT + 2 * (1 - labda ** 2) * labda ** 3 / y ** 3
-        ) / (1 - x ** 2)
+        d2T = (3 * Tx + 5 * x * dT + 2 * (1 - labda ** 2) * labda ** 3 / y ** 3) / (
+            1 - x ** 2
+        )
         # third derivative
         d3T = (
-            7 * x * d2T
-            + 8 * dT
-            - 6 * (1 - labda ** 2) * labda ** 5 * x / y ** 5
+            7 * x * d2T + 8 * dT - 6 * (1 - labda ** 2) * labda ** 5 * x / y ** 5
         ) / (1 - x ** 2)
 
-    return Tx-T, dT, d2T, d3T
+    return Tx - T, dT, d2T, d3T
+
 
 # main lamberts solver implemented using python
 # algorithm from Pykep in C++
-@njit(cache = True)
+@njit(cache=True)
 def lambert(r1_arr, r2_arr, mu, t):
 
     # validates all inputs:
@@ -188,7 +165,6 @@ def lambert(r1_arr, r2_arr, mu, t):
     assert abs(labda) < 1
     assert T > 0  # !!!?
 
-
     T0 = m.acos(labda) + labda * m.sqrt(1 - labda_squared)
     T1 = 2 / 3 * (1 - labda ** 3)
 
@@ -200,11 +176,9 @@ def lambert(r1_arr, r2_arr, mu, t):
     else:
         x0 = (T0 / T) ** np.log2(T1 / T0)
 
-
-
     # start householder iterations from x0 and find x,y
     # for the first revolution, so presumably M = 0
-    x = householder(T,labda,labda_squared,x0)
+    x = householder(T, labda, labda_squared, x0)
     # x-y transform using equaiton 16-17
     y = m.sqrt(1 - labda_squared * (1 - x ** 2))
 
@@ -220,13 +194,13 @@ def lambert(r1_arr, r2_arr, mu, t):
     v1_arr = vr1 * ir1 + vt1 * it1
     v2_arr = vr2 * ir2 + vt2 * it2
 
-    return v1_arr,v2_arr
+    return v1_arr, v2_arr
 
 
 # return velocity vector of planet in a circular orbit
 # velocity vector direction is counterclockwise (ir x ih)
 # defaults onto X-Y plane
-@njit(cache = True)
+@njit(cache=True)
 def circularOrbit(r_arr, ih=np.array([0, 0, -1])):
     R = np.linalg.norm(r_arr)
     # unit vector
@@ -243,8 +217,16 @@ def circularOrbit(r_arr, ih=np.array([0, 0, -1])):
 # r1 is fixed at [r1,0,0]
 # returns numpy array of departure and arrival true dV, lists of travel time and angle.
 
-@njit(cache = True)
-def scan(mu, a1, a2, tlow, thigh, dAng=1, dT=1 * 86400):
+
+@njit(cache=True)
+def scan(mu, mu1, mu2, a1, a2, rp1, rp2, hlo, tlow, thigh, dAng=1, dT=1 * 86400):
+
+    vlo1 = m.sqrt(mu1 / (rp1 + hlo))  # low orbit velocity of planets
+    vlo2 = m.sqrt(mu2 / (rp2 + hlo))
+
+    ve1 = vlo1 * m.sqrt(2)  # escape velocity of planets
+    ve2 = vlo2 * m.sqrt(2)
+
     ysize = thigh // dT
     xsize = 360 // dAng
     dv_dep = np.empty(shape=(xsize, ysize))
@@ -269,7 +251,7 @@ def scan(mu, a1, a2, tlow, thigh, dAng=1, dT=1 * 86400):
         while ang < 360:
             angRad = ang * m.pi / 180
             r2_arr = np.array([m.cos(angRad) * a2, m.sin(angRad) * a2, 0])
-            v1_arr,v2_arr = lambert(r1_arr, r2_arr, mu, t)
+            v1_arr, v2_arr = lambert(r1_arr, r2_arr, mu, t)
 
             # define all relevent velocities
             vr1_arr = circularOrbit(r1_arr)
@@ -294,42 +276,62 @@ def scan(mu, a1, a2, tlow, thigh, dAng=1, dT=1 * 86400):
         t += dT
     return dv_dep, dv_arr, t_ls, ang_ls
 
-starttime = time.time()
-dvDep, dvArr, tls, als = scan(mu, 1.0 * au, 1.524 * au, 10 * 86400, 300 * 86400)
-endtime = time.time()
-print("calculation took {} seconds".format(endtime-starttime))
 
-# code to fancy-print and visualize data.
-import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
+mu1 = 1 * Me * G  # SGP for planet 1
+mu2 = 0.107 * Me * G  # SGP for planet 2
+
+Msol = 1047.35 * Mj  # one solar mass
+mu = Msol * G
+
+rp1 = 6400 * 1000  # mean radius of planet 1
+rp2 = 3400 * 1000  # mean radius of planet 2
+
+hlo = 0 * 1000  # height of low orbit
+
+starttime = time.time()
+dvDep, dvArr, tls, als = scan(
+    mu, mu1, mu2, 1.0 * au, 1.524 * au, rp1, rp2, hlo, 10 * 86400, 300 * 86400
+)
+endtime = time.time()
+print("calculation took {} seconds".format(endtime - starttime))
+
 
 deltaVcutoff = 50  # cutoff for contour plotting
 
-fdep_arr = dvDep/1000
-farr_arr = dvArr/1000
 
-# sum up
-fsum_arr = fdep_arr + farr_arr
-# convert unit into km/s
-fsum_arr
-summin = np.nanmin(fsum_arr)
-minloc = np.where(fsum_arr == summin)
+def mkplot(dvDep, dvArr, deltaVcutoff):
+    # code to fancy-print and visualize data.
+    import matplotlib.pyplot as plt
+    import matplotlib.ticker as ticker
 
-level = np.linspace(summin, deltaVcutoff, 10)
-fig, ax = plt.subplots()
-sumcontour = ax.contour(np.swapaxes(fsum_arr, 0, 1), levels=level)
-ax.clabel(sumcontour, inline=1, inline_spacing=0.1, fontsize=8, fmt="%1.1f")
-thisx, thisy = minloc
-ax.scatter(thisx, thisy, marker="x")
-ax.annotate(str("{0:.3f}".format(summin)), minloc, c="navy")
+    fdep_arr = dvDep / 1000
+    farr_arr = dvArr / 1000
 
-scalex = max(als) / len(als)
-scaley = max(tls) / len(tls)
+    # sum up
+    fsum_arr = fdep_arr + farr_arr
+    # convert unit into km/s
+    fsum_arr
+    summin = np.nanmin(fsum_arr)
+    minloc = np.where(fsum_arr == summin)
 
-scaley /= 86400  # converts travel time into days
-scalex /= 86400
-ticks = ticker.FuncFormatter(lambda x, pos: "{0:.1f}".format(x * scalex))
-ax.xaxis.set_major_formatter(ticks)
-ticks = ticker.FuncFormatter(lambda y, pos: "{0:.1f}".format(y * scaley))
-ax.yaxis.set_major_formatter(ticks)
-plt.show()
+    level = np.linspace(summin, deltaVcutoff, 10)
+    fig, ax = plt.subplots()
+    sumcontour = ax.contour(np.swapaxes(fsum_arr, 0, 1), levels=level)
+    ax.clabel(sumcontour, inline=1, inline_spacing=0.1, fontsize=8, fmt="%1.1f")
+    thisx, thisy = minloc
+    ax.scatter(thisx, thisy, marker="x")
+    ax.annotate(str("{0:.3f}".format(summin)), minloc, c="navy")
+
+    scalex = max(als) / len(als)
+    scaley = max(tls) / len(tls)
+
+    scaley /= 86400  # converts travel time into days
+    scalex /= 86400
+    ticks = ticker.FuncFormatter(lambda x, pos: "{0:.1f}".format(x * scalex))
+    ax.xaxis.set_major_formatter(ticks)
+    ticks = ticker.FuncFormatter(lambda y, pos: "{0:.1f}".format(y * scaley))
+    ax.yaxis.set_major_formatter(ticks)
+    plt.show()
+
+
+mkplot(dvDep, dvArr, deltaVcutoff)
