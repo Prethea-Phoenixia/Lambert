@@ -305,13 +305,13 @@ import matplotlib.ticker as ticker
 
 deltaVcutoff = 50  # cutoff for contour plotting
 
-fdep_arr = dvDep
-farr_arr = dvArr
+fdep_arr = dvDep/1000
+farr_arr = dvArr/1000
 
 # sum up
 fsum_arr = fdep_arr + farr_arr
 # convert unit into km/s
-fsum_arr /= 1000
+fsum_arr
 summin = np.nanmin(fsum_arr)
 minloc = np.where(fsum_arr == summin)
 
