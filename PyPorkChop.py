@@ -244,6 +244,10 @@ def scan(mu, mu1, mu2, a1, a2, rp1, rp2, hlo, tlow, thigh, dAng=1, dT=1 * 86400)
         ang += dAng
 
     t_ls = []
+    t = 0
+    while t < thigh:
+        t_ls.append(t)
+        t += dT
     t = tlow
     while t < thigh:
         ang = 0
@@ -272,7 +276,6 @@ def scan(mu, mu1, mu2, a1, a2, rp1, rp2, hlo, tlow, thigh, dAng=1, dT=1 * 86400)
 
             ang += dAng
 
-        t_ls.append(t)
         t += dT
     return dv_dep, dv_arr, t_ls, ang_ls
 
